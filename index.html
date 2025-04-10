@@ -1,0 +1,728 @@
+<html>
+<head>
+    <title>3D Bubble Chart (Fixed Y-Axis)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 20px 0 0 0;
+            overflow: hidden; 
+            background: white; 
+            font-family: Arial, sans-serif;
+        }
+        .header {
+            position: relative;
+            width: 100%;
+            height: 80px;
+            margin-bottom: 20px;
+        }
+        #chartContainer {
+            position: relative;
+            width: 100%;
+            height: calc(100vh - 220px);
+            overflow: hidden;
+        }
+        #chartTitle {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: black;
+            z-index: 1001;
+        }
+        #chartSource {
+            position: relative;
+            width: 100%;
+            height: auto;
+            padding: 10px;
+            font-size: 12px;
+            color: #000;
+            background: #ffffff;
+            box-sizing: border-box;
+            z-index: 1001;
+            margin-top: 10px;
+            white-space: normal;
+            line-height: 1.4;
+        }
+        #tooltip {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            display: none;
+            border: 1px solid #ddd;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        #left-logo {
+          position: absolute;
+          top: 5px;
+          left: 15px;
+          z-index: 1002;
+        }
+        #left-logo img {
+          height: 60px;
+          width: auto;
+        }
+        #right-logo {
+          position: absolute;
+          top: 5px;
+          right: 15px;
+          z-index: 1002;
+        }
+        #right-logo img {
+          height: 60px;
+          width: auto;
+        }
+        .axis-label {
+            position: absolute;
+            background-color: rgba(255,255,255,0);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-weight: 300;
+            font-size: 12px;
+            color: black !important;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+            box-shadow: none;
+            z-index: 100;
+            pointer-events: none;
+            border: none;
+        }
+        .axis-title {
+            position: absolute;
+            background-color: rgba(255,255,255,0);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-weight: 700;
+            font-size: 14px;
+            color: black !important;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+            text-align: center;
+            box-shadow: none;
+            z-index: 100;
+            pointer-events: none;
+            border: none;
+            line-height: 1.4;
+            transition: opacity 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div id="left-logo">
+            <img src="Africa Trade Foundation Tagline.png" alt="International Economics Logo">
+        </div>
+        <div id="chartTitle">Africa's Export Diversification</div>
+        <div id="right-logo">
+            <img src="" alt="Trade Insights Logo">
+        </div>
+    </div>
+    <div id="chartContainer"></div>
+    <div id="chartSource">
+        Source: International Economics Consulting Ltd using export data from ITC Trademap and Product Complexity Index values from The Observatory of Economic Complexity. 
+        Note: Bubbles represent exports and the size of the bubble is relative to export values.
+    </div>
+    <div id="tooltip"></div>
+
+    <script>
+        window.addEventListener('load', function() {
+            // === Basic Three.js setup ===
+            var scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+            
+            var camera = new THREE.PerspectiveCamera(40, 1, 0.1, 3000);
+            camera.position.set(640.6687, 124.8113, 1300);
+            camera.rotation.set(-0.1094, 0.4680, 0.0495);
+            camera.lookAt(0, 0, 0);
+            
+            var container = document.getElementById("chartContainer");
+            var renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+            
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+        
+            // Lights
+            var ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            var directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(200, 200, 200);
+            scene.add(directionalLight);
+
+            // Axis configuration
+            var size = 550;
+            var zAxisLength = 770;
+            
+            // Define specific axis values
+            // New z-axis range: 1.5, 1.4, 1.3, 0, -1.3, -1.4, -1.5, -1.6, -1.7, -1.8, -1.9, -2.0, -2.1, -2.2
+            var yearValues = [2008, 2011, 2014, 2017, 2020, 2023];
+            var yValues = [1030, 1040, 1050, 1060, 1070,1080,1090,1100,1110];
+            var zGridValues = [1.5, 1.4, 1.3, 0, -1.3, -1.4, -1.5, -1.6, -1.7, -1.8, -1.9, -2.0, -2.1, -2.2];
+            
+            // === Simple Grid Planes ===
+            var bottomGeometry = new THREE.PlaneGeometry(size, zAxisLength);
+            var bottomMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.1
+            });
+            var bottomPlane = new THREE.Mesh(bottomGeometry, bottomMaterial);
+            bottomPlane.rotation.x = -Math.PI/2;
+            bottomPlane.position.y = -size/2;
+            scene.add(bottomPlane);
+            
+            var backGeometry = new THREE.PlaneGeometry(size, size);
+            var backMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.1
+            });
+            var backPlane = new THREE.Mesh(backGeometry, backMaterial);
+            backPlane.position.z = -zAxisLength/2;
+            scene.add(backPlane);
+            
+            var sideGeometry = new THREE.PlaneGeometry(size, size);
+            var sideMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.1
+            });
+            var sidePlane = new THREE.Mesh(sideGeometry, sideMaterial);
+            sidePlane.rotation.y = Math.PI/2;
+            sidePlane.position.x = -size/2;
+            scene.add(sidePlane);
+            
+            // Zero plane at z = 0
+            var zeroPlaneGeometry = new THREE.PlaneGeometry(size, size);
+            var zeroPlaneMaterial = new THREE.MeshBasicMaterial({
+                color: 0xF2E3AC,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.3
+            });
+            var zeroPlane = new THREE.Mesh(zeroPlaneGeometry, zeroPlaneMaterial);
+            
+            let zeroIndex = zGridValues.indexOf(0);
+            let zeroZPos = 0;
+            if (zeroIndex !== -1) {
+                let normalized = zeroIndex / (zGridValues.length - 1);
+                zeroZPos = zAxisLength/2 - (normalized * zAxisLength);
+            }
+            zeroPlane.position.z = zeroZPos;
+            scene.add(zeroPlane);
+            
+            // === Create grid lines ===
+            var lineMaterial = new THREE.LineBasicMaterial({ 
+                color: 0xF2E3AC,
+                transparent: false,
+                opacity: 0.3
+            });
+            var xzGrid = new THREE.Group();
+            for (let i = 0; i < yearValues.length; i++) {
+                let normalized = (yearValues[i] - 2008) / (2023 - 2008);
+                let xPos = (normalized * size) - size/2;
+                let lineGeometry = new THREE.BufferGeometry();
+                let vertices = new Float32Array([
+                    xPos, -size/2, -zAxisLength/2,
+                    xPos, -size/2, zAxisLength/2
+                ]);
+                lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                let line = new THREE.Line(lineGeometry, lineMaterial);
+                xzGrid.add(line);
+            }
+            for (let i = 0; i < zGridValues.length; i++) {
+                let normalized = i / (zGridValues.length - 1);
+                let zPos = zAxisLength/2 - (normalized * zAxisLength);
+                let lineGeometry = new THREE.BufferGeometry();
+                let vertices = new Float32Array([
+                    -size/2, -size/2, zPos,
+                    size/2, -size/2, zPos
+                ]);
+                lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                let line = new THREE.Line(lineGeometry, lineMaterial);
+                xzGrid.add(line);
+            }
+            scene.add(xzGrid);
+            
+            var yzGrid = new THREE.Group();
+            for (let i = 0; i < yValues.length; i++) {
+                let normalized = (yValues[i] - 1030) / (1110 - 1030);
+                let yPos = (normalized * size) - size/2;
+                let lineGeometry = new THREE.BufferGeometry();
+                let vertices = new Float32Array([
+                    -size/2, yPos, -zAxisLength/2,
+                    size/2, yPos, -zAxisLength/2
+                ]);
+                lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                let line = new THREE.Line(lineGeometry, lineMaterial);
+                yzGrid.add(line);
+            }
+            for (let i = 0; i < zGridValues.length; i++) {
+                let normalized = i / (zGridValues.length - 1);
+                let zPos = zAxisLength/2 - (normalized * zAxisLength);
+                let lineGeometry = new THREE.BufferGeometry();
+                let vertices = new Float32Array([
+                    -size/2, -size/2, zPos,
+                    -size/2, size/2, zPos
+                ]);
+                lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                let line = new THREE.Line(lineGeometry, lineMaterial);
+                yzGrid.add(line);
+            }
+            for (let i = 0; i < yValues.length; i++) {
+                let normalized = (yValues[i] - 1030) / (1110 - 1030);
+                let yPos = (normalized * size) - size/2;
+                let lineGeometry = new THREE.BufferGeometry();
+                let vertices = new Float32Array([
+                    -size/2, yPos, -zAxisLength/2,
+                    -size/2, yPos, zAxisLength/2
+                ]);
+                lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                let line = new THREE.Line(lineGeometry, lineMaterial);
+                yzGrid.add(line);
+            }
+            scene.add(yzGrid);
+            
+            var xyGrid = new THREE.Group();
+            for (let i = 0; i < yearValues.length; i++) {
+                let normalized = (yearValues[i] - 2008) / (2023 - 2008);
+                let xPos = (normalized * size) - size/2;
+                let lineGeometry = new THREE.BufferGeometry();
+                let vertices = new Float32Array([
+                    xPos, -size/2, -zAxisLength/2,
+                    xPos, size/2, -zAxisLength/2
+                ]);
+                lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                let line = new THREE.Line(lineGeometry, lineMaterial);
+                xyGrid.add(line);
+            }
+            for (let i = 0; i < yValues.length; i++) {
+                let normalized = (yValues[i] - 1030) / (1110 - 1030);
+                let yPos = (normalized * size) - size/2;
+                let lineGeometry = new THREE.BufferGeometry();
+                let vertices = new Float32Array([
+                    -size/2, yPos, -zAxisLength/2,
+                    size/2, yPos, -zAxisLength/2
+                ]);
+                lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                let line = new THREE.Line(lineGeometry, lineMaterial);
+                xyGrid.add(line);
+            }
+            scene.add(xyGrid);
+
+            // === HTML labels for axes ===
+            var htmlLabelsContainer = document.createElement('div');
+            htmlLabelsContainer.id = 'labels-container';
+            htmlLabelsContainer.style.position = 'absolute';
+            htmlLabelsContainer.style.top = '0';
+            htmlLabelsContainer.style.left = '0';
+            htmlLabelsContainer.style.width = '100%';
+            htmlLabelsContainer.style.height = '100%';
+            htmlLabelsContainer.style.pointerEvents = 'none';
+            container.appendChild(htmlLabelsContainer);
+            
+            var htmlLabels = [];
+            var axisTitles = []; // Array to specifically track axis titles
+            
+            function createAxisLabel(text, position3D, isZero = false) {
+                var id = 'label-' + htmlLabels.length;
+                var label = document.createElement('div');
+                label.id = id;
+                label.className = 'axis-label';
+                label.textContent = text;
+                if (isZero) {
+                    label.style.fontWeight = 'bold';
+                    label.style.color = '#FF5722 !important';
+                }
+                htmlLabelsContainer.appendChild(label);
+                htmlLabels.push({
+                    element: label,
+                    position3D: position3D,
+                    isZero: isZero
+                });
+                return label;
+            }
+            
+            function createAxisTitle(lines, position3D) {
+                var id = 'title-' + htmlLabels.length;
+                var title = document.createElement('div');
+                title.id = id;
+                title.className = 'axis-title';
+                var html = '';
+                lines.forEach(line => {
+                    html += '<div>' + line + '</div>';
+                });
+                title.innerHTML = html;
+                htmlLabelsContainer.appendChild(title);
+                
+                // Store in both arrays
+                var titleObj = {
+                    element: title,
+                    position3D: position3D
+                };
+                htmlLabels.push(titleObj);
+                axisTitles.push(titleObj);
+                
+                return title;
+            }
+            
+            function updateLabelPositions() {
+                htmlLabels.forEach(label => {
+                    var position = label.position3D.clone();
+                    position.project(camera);
+                    var x = (position.x * 0.5 + 0.5) * container.clientWidth;
+                    var y = (-position.y * 0.5 + 0.5) * container.clientHeight;
+                    
+                    // Check if this label is an axis title
+                    var isAxisTitle = axisTitles.some(title => title.element === label.element);
+                    
+                    if (position.z < 1) {
+                        label.element.style.display = 'block';
+                        label.element.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+                        if (label.isZero) {
+                            label.element.style.color = '#FF5722';
+                            label.element.style.fontWeight = 'bold';
+                        }
+                        
+                        // Only set opacity for non-axis titles
+                        if (!isAxisTitle) {
+                            label.element.style.opacity = 1;
+                        }
+                    } else {
+                        label.element.style.display = 'none';
+                    }
+                });
+                
+                // Handle axis titles visibility based on user interaction and camera position
+                if (userHasMoved && !isAtOriginalPosition) {
+                    axisTitles.forEach(title => {
+                        title.element.style.opacity = '0';
+                    });
+                } else {
+                    axisTitles.forEach(title => {
+                        title.element.style.opacity = '1';
+                    });
+                }
+            }
+
+            // X-axis labels
+            for (let i = 0; i < yearValues.length; i++) {
+                let normalized = (yearValues[i] - 2008) / (2023 - 2008);
+                let xPos = (normalized * size) - size/2;
+                createAxisLabel(
+                    yearValues[i].toString(),
+                    new THREE.Vector3(xPos, -size/2 - 40, zAxisLength/2 + 20)
+                );
+            }
+
+            // Y-axis labels
+            for (let i = 0; i < yValues.length; i++) {
+                let normalized = (yValues[i] - 1030) / (1110 - 1030);
+                let yPos = (normalized * size) - size/2;
+                createAxisLabel(
+                    yValues[i].toString(),
+                    new THREE.Vector3(-size/2 - 30, yPos, zAxisLength/2)
+                );
+            }
+
+            // Z-axis labels – display only if the 1 d.p. value multiplied by 10 is even
+            var zStep = zAxisLength / (zGridValues.length - 1);
+            for (let i = 0; i < zGridValues.length; i++) {
+                let val = parseFloat(zGridValues[i].toFixed(1));
+                // Multiply by 10 and check if even
+                if (Math.round(val * 10) % 2 !== 0) continue;
+                let zPos = zAxisLength/2 - (i * zStep);
+                let labelText = val.toFixed(1);
+                if (val === 0) {
+                    createAxisLabel(
+                        labelText,
+                        new THREE.Vector3(size/2, -size/2 - 20, zPos),
+                        true
+                    );
+                } else {
+                    createAxisLabel(
+                        labelText,
+                        new THREE.Vector3(size/2, -size/2 - 20, zPos)
+                    );
+                }
+            }
+
+            // Axis titles
+            createAxisTitle(
+                ['Year'],
+                new THREE.Vector3(0, -size/2 - 80, zAxisLength/2)
+            );
+            
+            createAxisTitle(
+                ['No of HS4 products', '(Over 1M USD exports)'],
+                new THREE.Vector3(-size/2 - 200, 0, zAxisLength/2)
+            );
+            
+            createAxisTitle(
+                ['Product', 'Complexity Index', '(Weighted avg)'],
+                new THREE.Vector3(size/2 + 80, -size/2 - 80, 0)
+            );
+            
+            // === Data ===
+            var data = [
+                { Year: 2008, Number: 1073, Complexity: -2.158483286, Exports: 525067060000 },
+                { Year: 2009, Number: 1057, Complexity: -2.026001043, Exports: 361640359000 },
+                { Year: 2010, Number: 1099, Complexity: -1.924578486, Exports: 488072856000 },
+                { Year: 2011, Number: 1105, Complexity: -1.843448638, Exports: 589702062000 },
+                { Year: 2012, Number: 1099, Complexity: -1.805386413, Exports: 596014429000 },
+                { Year: 2013, Number: 1095, Complexity: -1.778028639, Exports: 557374069000 },
+                { Year: 2014, Number: 1091, Complexity: -1.799859097, Exports: 535216175000 },
+                { Year: 2015, Number: 1079, Complexity: -1.607519897, Exports: 416884919000 },
+                { Year: 2016, Number: 1075, Complexity: -1.515806918, Exports: 363973195000 },
+                { Year: 2017, Number: 1072, Complexity: -1.549698532, Exports: 429112107000 },
+                { Year: 2018, Number: 1075, Complexity: -1.643178627, Exports: 505675686000 },
+                { Year: 2019, Number: 1065, Complexity: -1.494101427, Exports: 474041749000 },
+                { Year: 2020, Number: 1038, Complexity: -1.364126405, Exports: 381305260000 },
+                { Year: 2021, Number: 1083, Complexity: -1.403223351, Exports: 557087760000 },
+                { Year: 2022, Number: 1087, Complexity: -1.533794971, Exports: 683033625000 },
+                { Year: 2023, Number: 1078, Complexity: -1.555192642, Exports: 640884099000 }
+            ];
+
+            var minExport = Math.min.apply(Math, data.map(d => d.Exports));
+            var maxExport = Math.max.apply(Math, data.map(d => d.Exports));
+            
+            function scaleValue(value, min1, max1, min2, max2) {
+                return (value - min1) * (max2 - min2) / (max1 - min1) + min2;
+            }
+
+            // Create bubbles
+            data.forEach(d => {
+                var radius = scaleValue(d.Exports, minExport, maxExport, 5, 30);
+                var geometry = new THREE.SphereGeometry(radius, 32, 32);
+                var material = new THREE.MeshPhongMaterial({
+                    color: 0x2196F3,
+                    shininess: 50
+                });
+                var sphere = new THREE.Mesh(geometry, material);
+                sphere.position.x = scaleValue(d.Year, 2008, 2023, -size/2, size/2);
+                sphere.position.y = scaleValue(d.Number, 1030, 1110, -size/2, size/2);
+                let zIndex = -1;
+                for (let i = 0; i < zGridValues.length - 1; i++) {
+                    if (d.Complexity <= zGridValues[i] && d.Complexity > zGridValues[i+1]) {
+                        zIndex = i;
+                        break;
+                    }
+                }
+                let positionZ;
+                if (zIndex === -1) {
+                    if (d.Complexity > zGridValues[0]) {
+                        zIndex = 0;
+                        positionZ = zAxisLength/2;
+                    } else if (d.Complexity <= zGridValues[zGridValues.length - 1]) {
+                        zIndex = zGridValues.length - 2;
+                        positionZ = -zAxisLength/2;
+                    }
+                } else {
+                    let proportion = (d.Complexity - zGridValues[zIndex+1]) / (zGridValues[zIndex] - zGridValues[zIndex+1]);
+                    let pos1 = (zAxisLength/2) - (zIndex * zStep);
+                    let pos2 = (zAxisLength/2) - ((zIndex+1) * zStep);
+                    positionZ = pos2 + (proportion * (pos1 - pos2));
+                }
+                sphere.position.z = positionZ;
+                sphere.userData = d;
+                scene.add(sphere);
+            });
+
+            // Create connecting line between bubbles
+            var linePoints = [];
+            data.forEach(function(d) {
+                var x = scaleValue(d.Year, 2008, 2023, -size/2, size/2);
+                var y = scaleValue(d.Number, 1030, 1110, -size/2, size/2);
+                let zIndex = -1;
+                for (let i = 0; i < zGridValues.length - 1; i++) {
+                    if (d.Complexity <= zGridValues[i] && d.Complexity > zGridValues[i+1]) {
+                        zIndex = i;
+                        break;
+                    }
+                }
+                let z;
+                if (zIndex === -1) {
+                    if (d.Complexity > zGridValues[0]) {
+                        z = zAxisLength / 2;
+                    } else if (d.Complexity <= zGridValues[zGridValues.length - 1]) {
+                        z = -zAxisLength / 2;
+                    }
+                } else {
+                    let proportion = (d.Complexity - zGridValues[zIndex+1]) / (zGridValues[zIndex] - zGridValues[zIndex+1]);
+                    let pos1 = (zAxisLength / 2) - (zIndex * zStep);
+                    let pos2 = (zAxisLength / 2) - ((zIndex + 1) * zStep);
+                    z = pos2 + (proportion * (pos1 - pos2));
+                }
+                linePoints.push(new THREE.Vector3(x, y, z));
+            });
+            var lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
+            var lineMaterial = new THREE.LineBasicMaterial({ color: 0x2196F3,transparent: true,
+    opacity: 0.1  });
+            var connectingLine = new THREE.Line(lineGeometry, lineMaterial);
+            scene.add(connectingLine);
+
+            // === Raycaster for tooltip ===
+            var raycaster = new THREE.Raycaster();
+            var mouse = new THREE.Vector2();
+            var tooltip = document.getElementById('tooltip');
+            
+            window.addEventListener('mousemove', onMouseMove);
+            function onMouseMove(event) {
+                var rect = container.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                var intersects = raycaster.intersectObjects(scene.children);
+                var found = false;
+                for (var i = 0; i < intersects.length; i++) {
+                    if (intersects[i].object.geometry && intersects[i].object.geometry.type === 'SphereGeometry') {
+                        var d = intersects[i].object.userData;
+                        tooltip.style.display = 'block';
+                        tooltip.style.left = (event.clientX - rect.left + 10) + 'px';
+                        tooltip.style.top = (event.clientY - rect.top + 10) + 'px';
+                        tooltip.innerHTML = 
+                            'Year: ' + d.Year + '<br>' +
+                            'No. of products > $1M: ' + d.Number + '<br>' +
+                            'Weighted PCI: ' + d.Complexity.toFixed(1) + '<br>' + 
+                            'Exports: $' + (d.Exports / 1e9).toFixed(0) + ' billion';
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    tooltip.style.display = 'none';
+                }
+            }
+
+            // Store the original camera position and rotation for comparison
+            var originalCameraPosition = new THREE.Vector3(640.6687, 124.8113, 1300);
+            var originalCameraRotation = new THREE.Euler(-0.1094, 0.4680, 0.0495);
+            var userHasMoved = false; // Flag to track if user has moved the chart
+            var isAtOriginalPosition = true; // Flag to track if camera is at original position
+            
+            // Function to check if camera is close to original position
+            function isCameraAtOriginalPosition() {
+                // Check if camera position is close to original
+                var positionDistance = camera.position.distanceTo(originalCameraPosition);
+                
+                // Check if camera rotation is close to original
+                var rotationDistance = Math.abs(camera.rotation.x - originalCameraRotation.x) +
+                                       Math.abs(camera.rotation.y - originalCameraRotation.y) +
+                                       Math.abs(camera.rotation.z - originalCameraRotation.z);
+                
+                // Return true if both position and rotation are very close
+                return positionDistance < 10 && rotationDistance < 0.05;
+            }
+
+            // === HTML labels for axes ===
+            var isDragging = false;
+            var previousMousePosition = { x: 0, y: 0 };
+            window.addEventListener('mousedown', () => { 
+                isDragging = true;
+                // Set flag when user starts dragging
+                userHasMoved = true;
+                isAtOriginalPosition = false;
+            });
+            window.addEventListener('mouseup', () => { isDragging = false; });
+            window.addEventListener('mousemove', e => {
+                if (isDragging) {
+                    var deltaMove = {
+                        x: e.clientX - previousMousePosition.x,
+                        y: e.clientY - previousMousePosition.y
+                    };
+                    var rotationSpeed = 0.005;
+                    var offset = camera.position.clone().sub(scene.position);
+                    var radius = offset.length();
+                    var theta = Math.atan2(offset.z, offset.x);
+                    var phi = Math.acos(offset.y / radius);
+                    theta -= deltaMove.x * rotationSpeed; 
+                    phi   -= deltaMove.y * rotationSpeed;  
+                    phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi));
+                    offset.x = radius * Math.sin(phi) * Math.cos(theta);
+                    offset.y = radius * Math.cos(phi);
+                    offset.z = radius * Math.sin(phi) * Math.sin(theta);
+                    camera.position.copy(scene.position.clone().add(offset));
+                    camera.lookAt(scene.position);
+                }
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            // === Mouse wheel zoom ===
+            window.addEventListener('wheel', event => {
+                event.preventDefault();
+                // Set flag when user zooms
+                userHasMoved = true;
+                isAtOriginalPosition = false;
+                var minZoom = 800, maxZoom = 2500, zoomSpeed = 0.1;
+                var distance = camera.position.length();
+                var zoomFactor = event.deltaY > 0 ? 1 + zoomSpeed : 1 - zoomSpeed;
+                var newDistance = distance * zoomFactor;
+                newDistance = Math.min(Math.max(newDistance, minZoom), maxZoom);
+                var scale = newDistance / distance;
+                camera.position.multiplyScalar(scale);
+                camera.lookAt(0, 0, 0);});
+
+            // === Resize handling ===
+            window.addEventListener('resize', () => {
+                var w = container.clientWidth;
+                var h = container.clientHeight;
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
+                renderer.setSize(w, h);
+            });
+
+            // Reset function (no visible button)
+            function resetView() {
+                // Reset camera to original position
+                camera.position.set(640.6687, 124.8113, 1300);
+                camera.rotation.set(-0.1094, 0.4680, 0.0495);
+                camera.lookAt(0, 0, 0);
+                
+                // Reset the movement flags
+                userHasMoved = false;
+                isAtOriginalPosition = true;
+                
+                // Show all axis titles again
+                axisTitles.forEach(title => {
+                    title.element.style.opacity = '1';
+                });
+            }
+            
+            // Add double-click handler to reset view
+            container.addEventListener('dblclick', resetView);
+
+            // === Show titles at the beginning ===
+            axisTitles.forEach(title => {
+                title.element.style.opacity = '1';
+            });
+
+            // === Render loop ===
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                // Check if camera is at or near original position
+                isAtOriginalPosition = isCameraAtOriginalPosition();
+                
+                renderer.render(scene, camera);
+                updateLabelPositions();
+            }
+            animate();
+        });
+    </script>
+</body>
+</html><!DOCTYPE html>
